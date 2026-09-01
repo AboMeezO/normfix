@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "normfix"
+version = "0.1.0"
+description = "Safe, extensible formatter and fixer for 42 School C projects."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "AboMeezO" }]
+dependencies = [
+    "typer>=0.16,<1.0",
+    "rich>=14,<15",
+]
+
+[project.scripts]
+normfix = "normfix.cli.app:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/normfix"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
