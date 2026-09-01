@@ -72,6 +72,49 @@ class EmptyLineFixer(Fixer):
         return lines[index][1] + len(lines[index][2])
 
 
+class ConsecutiveNewlineFixer(Fixer):
+    id = "consecutive-newlines"
+    description = "Collapse multiple blank lines into one."
+    rule_codes = {"CONSECUTIVE_NEWLINES"}
+    priority = 290
+
+    def supports(self, diagnostic) -> bool:
+        return diagnostic.rule in self.rule_codes
+
+    def plan(self, context: FixContext) -> list[Edit]:
+        lines = list(line_ranges(context.source.content))
+        edits: list[Edit] = []
+        blank_run_start = None
+        blank_run_count = 0
+
+        for index, (_, start, line) in enumerate(lines):
+            if not line.strip():
+                if blank_run_start is None:
+                    blank_run_start = index
+                blank_run_count += 1
+            else:
+                if blank_run_count > 1:
+                    keep_start = blank_run_start + blank_run_count - 1
+                    for remove_index in range(blank_run_start, keep_start):
+                        rm_start = lines[remove_index][1]
+                        rm_end = lines[remove_index + 1][1]
+                        edits.append(Edit(rm_start, rm_end, "", self.id))
+                blank_run_start = None
+                blank_run_count = 0
+
+        if blank_run_count > 1:
+            keep_start = blank_run_start + blank_run_count - 1
+            for remove_index in range(blank_run_start, keep_start):
+                rm_start = lines[remove_index][1]
+                if remove_index + 1 < len(lines):
+                    rm_end = lines[remove_index + 1][1]
+                else:
+                    rm_end = lines[remove_index][1] + len(lines[remove_index][2])
+                edits.append(Edit(rm_start, rm_end, "", self.id))
+
+        return edits
+
+
 class PreprocessorSpacingFixer(Fixer):
     id = "nl-after-preproc"
     description = "Separate a preprocessor block from following code."

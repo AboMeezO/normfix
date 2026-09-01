@@ -4,7 +4,7 @@ from normfix.rules.formatting.declarations import (
     VariableDeclarationNewlineFixer,
     VariableDeclarationSpacingFixer,
 )
-from normfix.rules.formatting.empty_lines import EmptyLineFixer, PreprocessorSpacingFixer
+from normfix.rules.formatting.empty_lines import ConsecutiveNewlineFixer, EmptyLineFixer, PreprocessorSpacingFixer
 from normfix.rules.formatting.indentation import IndentationFixer
 from normfix.rules.formatting.spacing import (
     ConsecutiveSpacesFixer,
@@ -22,6 +22,7 @@ def create_registry() -> FixerRegistry:
     registry.register(ConsecutiveSpacesFixer())
     registry.register(FunctionSpacingFixer())
     registry.register(SpaceReplaceTabFixer())
+    registry.register(ConsecutiveNewlineFixer())
     registry.register(EmptyLineFixer())
     registry.register(PreprocessorSpacingFixer())
     registry.register(DeclarationAssignmentFixer())

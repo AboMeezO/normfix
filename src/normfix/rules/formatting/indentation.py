@@ -14,7 +14,7 @@ _CTRL_FLOW = re.compile(
 class IndentationFixer(Fixer):
     id = "indentation"
     description = "Normalize C block indentation to tabs."
-    rule_codes = {"TOO_FEW_TAB", "SPACE_REPLACE_TAB"}
+    rule_codes = {"TOO_FEW_TAB", "TOO_MANY_TAB", "SPACE_REPLACE_TAB"}
     priority = 100
 
     def supports(self, diagnostic) -> bool:
@@ -27,6 +27,9 @@ class IndentationFixer(Fixer):
         depth = 0
         in_block_comment = False
         braceless_body = False
+        braceless_ctrl = False
+        paren_depth = 0
+        after_braceless = False
 
         for index, (_, start, line) in enumerate(lines):
             stripped = line.lstrip(" \t")
@@ -35,9 +38,17 @@ class IndentationFixer(Fixer):
             if is_preprocessor(line):
                 continue
 
-            if braceless_body and not stripped.startswith("{"):
-                depth += 1
-                braceless_body = False
+            if after_braceless:
+                depth -= 1
+                after_braceless = False
+
+            if braceless_body:
+                if stripped.startswith("{"):
+                    braceless_body = False
+                else:
+                    depth += 1
+                    braceless_body = False
+                    after_braceless = True
 
             masked, in_block_comment = self._mask_line(
                 stripped, in_block_comment
@@ -45,8 +56,23 @@ class IndentationFixer(Fixer):
             if not masked.strip():
                 continue
 
+            paren_delta = masked.count("(") - masked.count(")")
+
             closing = masked.lstrip().startswith("}")
             wanted_depth = max(0, depth - int(closing))
+
+            if paren_depth > 0:
+                wanted_depth += 1
+                paren_depth += paren_delta
+                if paren_depth <= 0:
+                    paren_depth = 0
+                    if braceless_ctrl:
+                        braceless_body = True
+                        braceless_ctrl = False
+            elif _CTRL_FLOW.match(stripped) and paren_delta > 0:
+                paren_depth = paren_delta
+                braceless_ctrl = True
+
             replacement = "\t" * wanted_depth + stripped
             if replacement != line:
                 edits.append(Edit(
@@ -61,7 +87,8 @@ class IndentationFixer(Fixer):
             depth = max(depth, 0)
 
             if delta == 0 and _CTRL_FLOW.match(stripped) and "{" not in masked:
-                braceless_body = True
+                if paren_delta == 0:
+                    braceless_body = True
 
         return edits
 
