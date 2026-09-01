@@ -1,0 +1,92 @@
+from normfix.core.models import Edit
+from normfix.rules.base import FixContext, Fixer
+from normfix.rules.formatting.helpers import is_preprocessor, line_ranges
+
+
+class IndentationFixer(Fixer):
+    id = "indentation"
+    description = "Normalize C block indentation to tabs."
+    rule_codes = {"TOO_FEW_TAB", "SPACE_REPLACE_TAB"}
+    priority = 100
+
+    def supports(self, diagnostic) -> bool:
+        return diagnostic.rule in self.rule_codes
+
+    def plan(self, context: FixContext) -> list[Edit]:
+        source = context.source.content
+        lines = list(line_ranges(source))
+        edits: list[Edit] = []
+        depth = 0
+        in_block_comment = False
+
+        for index, (_, start, line) in enumerate(lines):
+            stripped = line.lstrip(" \t")
+            if not stripped:
+                continue
+            if is_preprocessor(line):
+                continue
+
+            masked, in_block_comment = self._mask_line(
+                stripped, in_block_comment
+            )
+            if not masked.strip():
+                continue
+
+            closing = masked.lstrip().startswith("}")
+            wanted_depth = max(0, depth - int(closing))
+            replacement = "\t" * wanted_depth + stripped
+            if replacement != line:
+                edits.append(Edit(
+                    start,
+                    start + len(line),
+                    replacement,
+                    self.id,
+                ))
+
+            depth += self._brace_delta(masked)
+            depth = max(depth, 0)
+
+        return edits
+
+    @staticmethod
+    def _mask_line(line: str, in_block_comment: bool) -> tuple[str, bool]:
+        out: list[str] = []
+        quote = None
+        escaped = False
+        index = 0
+        while index < len(line):
+            char = line[index]
+            nxt = line[index + 1] if index + 1 < len(line) else ""
+            if in_block_comment:
+                out.append(" ")
+                if char == "*" and nxt == "/":
+                    out.append(" ")
+                    index += 2
+                    in_block_comment = False
+                    continue
+            elif quote:
+                out.append(" ")
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+            elif char in "'\"":
+                quote = char
+                out.append(" ")
+            elif char == "/" and nxt == "*":
+                out.extend((" ", " "))
+                index += 2
+                in_block_comment = True
+                continue
+            elif char == "/" and nxt == "/":
+                break
+            else:
+                out.append(char)
+            index += 1
+        return "".join(out), in_block_comment
+
+    @staticmethod
+    def _brace_delta(line: str) -> int:
+        return line.count("{") - line.count("}")
