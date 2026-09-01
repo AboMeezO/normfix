@@ -24,7 +24,8 @@ class EmptyLineFixer(Fixer):
         edits: list[Edit] = []
         newline = "\r\n" if "\r\n" in context.source.content else "\n"
 
-        for span in function_spans(context.source.content):
+        spans = context.function_spans if context.function_spans else function_spans(context.source.content)
+        for span in spans:
             body_start = span.body_start_line
             body_end = span.end_line - 1
             declaration_end = self._declaration_end(lines, body_start, body_end)

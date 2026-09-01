@@ -26,7 +26,8 @@ class DeclarationAssignmentFixer(Fixer):
     def plan(self, context: FixContext) -> list[Edit]:
         edits: list[Edit] = []
         lines = list(line_ranges(context.source.content))
-        for span in function_spans(context.source.content):
+        spans = context.function_spans if context.function_spans else function_spans(context.source.content)
+        for span in spans:
             block = self._leading_declarations_with_assignments(lines, span)
             if not block:
                 continue
@@ -132,7 +133,8 @@ class VariableDeclarationSpacingFixer(Fixer):
     def plan(self, context: FixContext) -> list[Edit]:
         edits: list[Edit] = []
         lines = list(line_ranges(context.source.content))
-        for span in function_spans(context.source.content):
+        spans = context.function_spans if context.function_spans else function_spans(context.source.content)
+        for span in spans:
             declarations = self._leading_declarations(lines, span)
             if not declarations:
                 continue
@@ -189,7 +191,8 @@ class VariableDeclarationNewlineFixer(Fixer):
         edits: list[Edit] = []
         lines = list(line_ranges(context.source.content))
         newline = "\r\n" if "\r\n" in context.source.content else "\n"
-        for span in function_spans(context.source.content):
+        spans = context.function_spans if context.function_spans else function_spans(context.source.content)
+        for span in spans:
             declarations = []
             index = span.body_start_line - 1
             end_index = span.end_line - 1

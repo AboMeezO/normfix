@@ -11,6 +11,7 @@ from normfix.presentation.report import print_check_report
 from normfix.project.discovery import discover_files
 from normfix.rules.base import FixContext
 from normfix.rules.builtin import create_registry
+from normfix.rules.formatting.layout import function_spans
 
 app = typer.Typer(no_args_is_help=True, help="Safe fixer for 42 Norm violations.")
 console = Console()
@@ -19,18 +20,14 @@ console = Console()
 def _scan(path: Path) -> tuple[list[Path], dict[Path, list]]:
     provider = NorminetteProvider()
     files = discover_files(path)
-    diagnostics_by_file = defaultdict(list)
-
-    for file in files:
-        source = SourceFile(file, file.read_text(encoding="utf-8"))
-        diagnostics_by_file[file].extend(provider.analyze(source))
+    diagnostics_by_file = provider.analyze_batch(files)
     return files, diagnostics_by_file
 
 
 def _header_end(source: str) -> int:
     """Return the offset after an existing 42 header, if present."""
     lines = source.splitlines(keepends=True)
-    marker = "# **************************************************************************** #"
+    marker = "/* ************************************************************************** */"
     if not lines or lines[0].rstrip("\r\n") != marker:
         return 0
     offset = 0
@@ -50,6 +47,7 @@ def _protected_edits(source: str, edits):
 
 def _apply_file(source: SourceFile, diagnostics: list, registry) -> SourceFile:
     content = source.content
+    cached_spans = tuple(function_spans(content))
     for fixer in registry.all():
         matching = [d for d in diagnostics if fixer.supports(d)]
         if not matching:
@@ -57,11 +55,12 @@ def _apply_file(source: SourceFile, diagnostics: list, registry) -> SourceFile:
         edits = []
         for diagnostic in matching:
             current = SourceFile(source.path, content)
-            edits.extend(fixer.plan(FixContext(current, diagnostic)))
+            edits.extend(fixer.plan(FixContext(current, diagnostic, function_spans=cached_spans)))
         edits = _protected_edits(content, edits)
         unique = {(e.start, e.end, e.replacement, e.rule): e for e in edits}
         if unique:
             content = apply_edits(content, list(unique.values()))
+            cached_spans = tuple(function_spans(content))
     return SourceFile(source.path, content)
 
 
@@ -91,17 +90,27 @@ def fix(
     changed = 0
     unsupported = 0
 
+    # Read all files once and analyze in a single subprocess call
+    sources: dict[Path, SourceFile] = {}
     for file in files:
-        original = SourceFile(file, file.read_text(encoding="utf-8"))
-        diagnostics = provider.analyze(original)
+        sources[file] = SourceFile(file, file.read_text(encoding="utf-8"))
+
+    diagnostics_by_file = provider.analyze_batch(files)
+
+    changed_files: list[Path] = []
+    for file in files:
+        original = sources[file]
+        diagnostics = diagnostics_by_file.get(file, [])
         unsupported += sum(1 for d in diagnostics if not registry.find(d.rule))
         fixed = _apply_file(original, diagnostics, registry)
         if fixed.content == original.content:
             continue
         changed += 1
+        changed_files.append(file)
         console.print(f"[yellow]•[/yellow] {file} [green]fixes planned[/green]")
         if not dry_run:
             file.write_text(fixed.content, encoding="utf-8")
+            sources[file] = fixed
 
     console.print()
     if dry_run:
@@ -112,10 +121,12 @@ def fix(
         console.print("[dim]Dry run: no files were changed.[/dim]")
         return
 
+    # Re-analyze only changed files
     remaining = 0
-    for file in files:
-        source = SourceFile(file, file.read_text(encoding="utf-8"))
-        remaining += len(provider.analyze(source))
+    if changed_files:
+        reanalysis = provider.analyze_batch(changed_files)
+        for diags in reanalysis.values():
+            remaining += len(diags)
 
     if remaining:
         console.print(

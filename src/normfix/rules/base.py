@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from normfix.core.models import Diagnostic, Edit, SourceFile
@@ -9,6 +11,7 @@ from normfix.core.models import Diagnostic, Edit, SourceFile
 class FixContext:
     source: SourceFile
     diagnostic: Diagnostic
+    function_spans: tuple = field(default_factory=tuple)
 
 
 class Fixer(ABC):
