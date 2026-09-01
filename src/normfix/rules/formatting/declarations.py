@@ -4,6 +4,8 @@ from normfix.core.models import Edit
 from normfix.rules.base import FixContext, Fixer
 from normfix.rules.formatting.helpers import line_ranges
 from normfix.rules.formatting.layout import (
+    FunctionSpan,
+    _norminette_gap_tabs,
     declaration_target_column,
     function_spans,
     parse_declaration,
@@ -23,20 +25,67 @@ class DeclarationAssignmentFixer(Fixer):
 
     def plan(self, context: FixContext) -> list[Edit]:
         edits: list[Edit] = []
-        for _, start, line in line_ranges(context.source.content):
-            declaration = parse_declaration(line, 0, start)
-            if not declaration or "=" not in declaration.declarator:
+        lines = list(line_ranges(context.source.content))
+        for span in function_spans(context.source.content):
+            block = self._leading_declarations_with_assignments(lines, span)
+            if not block:
                 continue
-            name, value = self._split_assignment(declaration.declarator)
-            if value is None:
+            pure_decls, assignments = block
+            if not assignments:
                 continue
-            indent = declaration.indent
-            replacement = (
-                f"{indent}{declaration.type_text} {name};\n"
-                f"{indent}{self._assignment_name(name)} = {value};"
-            )
-            edits.append(Edit(start, start + len(line), replacement, self.id))
+            all_items = sorted(pure_decls + assignments, key=lambda x: x.start)
+            start_offset = all_items[0].start
+            end_offset = all_items[-1].start + len(lines[all_items[-1].line_index][2])
+            original_text = context.source.content[start_offset:end_offset]
+            indent = all_items[0].indent
+            decl_lines = []
+            for item in pure_decls:
+                original = lines[item.line_index][2]
+                decl_lines.append(original)
+            assign_lines = []
+            for item in assignments:
+                name_part, value = self._split_assignment(item.declarator)
+                if value is None:
+                    continue
+                name = self._assignment_name(name_part)
+                stars = name_part.strip()[:len(name_part.strip()) - len(name_part.strip().lstrip("*"))]
+                decl_lines.append(f"{item.indent}{item.type_text} {stars}{name};")
+                assign_lines.append(f"{item.indent}{name} = {value};")
+            new_text = "\n".join(decl_lines + assign_lines)
+            if new_text != original_text:
+                edits.append(Edit(start_offset, end_offset, new_text, self.id))
         return edits
+
+    @staticmethod
+    def _leading_declarations_with_assignments(
+        lines: list[tuple[int, int, str]],
+        span: FunctionSpan,
+    ) -> tuple[list, list]:
+        """Collect leading declarations and assignments in a function body.
+
+        Returns (pure_declarations, assignments) where pure_declarations
+        are declarations without initializers and assignments are
+        declarations with initializers that need to be split.
+        """
+        pure_decls = []
+        assignments = []
+        index = span.body_start_line - 1
+        end_index = span.end_line - 1
+        while index < end_index:
+            line_number, start, line = lines[index]
+            declaration = parse_declaration(line, index, start)
+            if declaration:
+                if "=" in declaration.declarator:
+                    assignments.append(declaration)
+                else:
+                    pure_decls.append(declaration)
+                index += 1
+                continue
+            if not line.strip() and (pure_decls or assignments):
+                index += 1
+                continue
+            break
+        return pure_decls, assignments
 
     @staticmethod
     def _assignment_name(declarator: str) -> str:
@@ -90,8 +139,7 @@ class VariableDeclarationSpacingFixer(Fixer):
             types = [item.type_text for item in declarations]
             target = declaration_target_column(types, declarations[0].indent)
             for item in declarations:
-                start_column = visual_width(item.indent + item.type_text)
-                tabs = tabs_to_column(start_column, target)
+                tabs = _norminette_gap_tabs(item.type_text, target)
                 replacement = (
                     item.indent
                     + item.type_text
@@ -112,7 +160,7 @@ class VariableDeclarationSpacingFixer(Fixer):
     @staticmethod
     def _leading_declarations(lines, span):
         declarations = []
-        index = span.body_start_line
+        index = span.body_start_line - 1
         end_index = span.end_line - 1
         while index < end_index:
             line_number, start, line = lines[index]
@@ -143,7 +191,7 @@ class VariableDeclarationNewlineFixer(Fixer):
         newline = "\r\n" if "\r\n" in context.source.content else "\n"
         for span in function_spans(context.source.content):
             declarations = []
-            index = span.body_start_line
+            index = span.body_start_line - 1
             end_index = span.end_line - 1
             while index < end_index:
                 line_number, start, line = lines[index]

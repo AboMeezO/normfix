@@ -108,6 +108,12 @@ def function_spans(source: str) -> list[FunctionSpan]:
             prefix = masked[max(0, masked.rfind("\n", 0, index) + 1):index]
             if ")" in prefix:
                 body_start = (line, index)
+            else:
+                prev_newline = masked.rfind("\n", 0, index)
+                if prev_newline >= 0:
+                    prev_line = masked[max(0, masked.rfind("\n", 0, prev_newline) + 1):prev_newline]
+                    if ")" in prev_line:
+                        body_start = (line, index)
             depth = 1
         elif char == "{" and depth:
             depth += 1
@@ -165,6 +171,40 @@ def visual_width(text: str, start_column: int = 0) -> int:
     return column
 
 
+def _norminette_type_score(type_text: str) -> int:
+    """Replicate norminette's alignment scoring from check_variable_indent.py.
+
+    norminette counts ``floor((keyword_length + buffer) / 4)`` for each
+    type keyword, with a 1-space buffer between keywords.
+    """
+    score = 0
+    buf = 0
+    words = type_text.split()
+    for i, word in enumerate(words):
+        score += (len(word) + buf) // 4
+        buf = 1 if i < len(words) - 1 else 0
+    return score
+
+
+def _norminette_gap_tabs(type_text: str, target_score: int) -> int:
+    """Return the number of TABs needed between *type_text* and the
+    variable name so that the name lands at *target_score* columns
+    (counting 1 for the leading TAB + type_score + gap_tabs).
+    """
+    leading = 1
+    return max(0, target_score - leading - _norminette_type_score(type_text))
+
+
+def declaration_target_column(types: list[str], indent: str) -> int:
+    """Return the norminette alignment score that all names should reach.
+
+    The score is: ``1 (leading tab) + max_type_score + 1`` (the +1 is
+    the minimum single gap-tab that norminette requires).
+    """
+    max_score = max(_norminette_type_score(t) for t in types)
+    return 1 + max_score + 1
+
+
 def tabs_to_column(start_column: int, target_column: int) -> int:
     count = 0
     column = start_column
@@ -172,8 +212,3 @@ def tabs_to_column(start_column: int, target_column: int) -> int:
         column += 8 - (column % 8)
         count += 1
     return count
-
-
-def declaration_target_column(types: list[str], indent: str) -> int:
-    max_width = max(visual_width(indent + type_text) for type_text in types)
-    return ((max_width // 8) + 1) * 8

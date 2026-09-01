@@ -7,7 +7,7 @@ name = "normfix"
 version = "0.1.0"
 description = "Safe, extensible formatter and fixer for 42 School C projects."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 authors = [{ name = "AboMeezO" }]
 dependencies = [
     "typer>=0.16,<1.0",

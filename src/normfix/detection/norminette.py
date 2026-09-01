@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from normfix.core.models import Diagnostic, Severity, SourceFile, SourceLocation
@@ -16,15 +20,22 @@ class NorminetteError(RuntimeError):
     pass
 
 
+def _resolve_norminette() -> list[str]:
+    """Return the command prefix used to invoke norminette."""
+    if shutil.which("norminette"):
+        return ["norminette"]
+    return [sys.executable, "-m", "norminette"]
+
+
 class NorminetteProvider:
     """Adapter around the installed norminette executable."""
 
-    def __init__(self, executable: str = "norminette") -> None:
-        self.executable = executable
+    def __init__(self, executable: str | None = None) -> None:
+        self._cmd = _resolve_norminette() if executable is None else [executable]
 
     def analyze(self, source: SourceFile) -> list[Diagnostic]:
         process = subprocess.run(
-            [self.executable, str(source.path)],
+            self._cmd + [str(source.path)],
             text=True,
             capture_output=True,
             check=False,

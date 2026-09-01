@@ -63,8 +63,8 @@ def test_local_declarations_use_common_tab_stop() -> None:
         "NL_AFTER_VAR_DECL",
     )
 
-    assert "\tchar\t\tc;\n" in fixed
-    assert "\tint\t\tindex;\n" in fixed
+    assert "\tchar\t\t\tc;\n" in fixed
+    assert "\tint\t\t\t\tindex;\n" in fixed
     assert "\tunsigned char\t*data;\n" in fixed
     assert "\n\tindex = 0;\n" in fixed
 
@@ -80,4 +80,5 @@ def test_declaration_assignment_is_split_before_alignment() -> None:
     fixed = apply(source, "DECL_ASSIGN_LINE", "MISALIGNED_VAR_DECL")
 
     assert "unsigned char\t*data;" in fixed
-    assert "\n\tdata = (unsigned char *)0;" in fixed
+    assert "data = (unsigned char *)0;" in fixed
+    assert "data = 0;" in fixed

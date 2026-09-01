@@ -1,6 +1,14 @@
+from __future__ import annotations
+
+import re
+
 from normfix.core.models import Edit
 from normfix.rules.base import FixContext, Fixer
 from normfix.rules.formatting.helpers import is_preprocessor, line_ranges
+
+_CTRL_FLOW = re.compile(
+    r"^\s*(if|else|for|while|do)\b"
+)
 
 
 class IndentationFixer(Fixer):
@@ -18,6 +26,7 @@ class IndentationFixer(Fixer):
         edits: list[Edit] = []
         depth = 0
         in_block_comment = False
+        braceless_body = False
 
         for index, (_, start, line) in enumerate(lines):
             stripped = line.lstrip(" \t")
@@ -25,6 +34,10 @@ class IndentationFixer(Fixer):
                 continue
             if is_preprocessor(line):
                 continue
+
+            if braceless_body and not stripped.startswith("{"):
+                depth += 1
+                braceless_body = False
 
             masked, in_block_comment = self._mask_line(
                 stripped, in_block_comment
@@ -43,8 +56,12 @@ class IndentationFixer(Fixer):
                     self.id,
                 ))
 
-            depth += self._brace_delta(masked)
+            delta = self._brace_delta(masked)
+            depth += delta
             depth = max(depth, 0)
+
+            if delta == 0 and _CTRL_FLOW.match(stripped) and "{" not in masked:
+                braceless_body = True
 
         return edits
 
